@@ -1,234 +1,129 @@
 const express = require('express');
 const cors = require('cors');
-const { Gateway, Wallets } = require('fabric-network');
-const path = require('path');
-const fs = require('fs');
+const { mockTransactions } = require('./mockData');
 
 const app = express();
 const PORT = 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
 
-// Helper function to connect to Fabric network
-async function connectToNetwork() {
-    try {
-        // Load connection profile
-        const ccpPath = path.resolve(__dirname, '..', '..', 'test-network', 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
-        const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
-
-        // Create wallet
-        const walletPath = path.join(process.cwd(), 'wallet');
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-
-        // Check if admin identity exists
-        const identity = await wallet.get('appUser');
-        if (!identity) {
-            console.log('Identity not found in wallet. Please enroll user first.');
-            return null;
-        }
-
-        // Connect to gateway
-        const gateway = new Gateway();
-        await gateway.connect(ccp, {
-            wallet,
-            identity: 'appUser',
-            discovery: { enabled: true, asLocalhost: true }
-        });
-
-        // Get network and contract
-        const network = await gateway.getNetwork('mychannel');
-        const contract = network.getContract('sme-cashflow');
-
-        return { gateway, contract };
-    } catch (error) {
-        console.error(`Failed to connect to network: ${error}`);
-        return null;
-    }
-}
-
-// ============ API Routes ============
+// In-memory storage (simulating blockchain)
+let transactions = [...mockTransactions];
+let transactionCounter = transactions.length + 1;
 
 // Health check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'Backend API is running', timestamp: new Date().toISOString() });
+  res.json({ status: 'OK', message: 'Mock Blockchain API is running' });
 });
 
-// Initialize ledger
-app.post('/api/blockchain/init', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        await contract.submitTransaction('InitLedger');
-        await gateway.disconnect();
-
-        res.json({ message: 'Ledger initialized successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Create transaction
-app.post('/api/blockchain/transaction', async (req, res) => {
-    try {
-        const { transactionID, smeID, type, amount, category, description, date, createdBy } = req.body;
-
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.submitTransaction(
-            'CreateTransaction',
-            transactionID,
-            smeID,
-            type,
-            amount.toString(),
-            category,
-            description,
-            date,
-            createdBy
-        );
-        await gateway.disconnect();
-
-        res.json({ 
-            message: 'Transaction created successfully',
-            transaction: JSON.parse(result.toString())
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Initialize ledger (reset to original mock data)
+app.post('/api/init', (req, res) => {
+  transactions = [...mockTransactions];
+  transactionCounter = transactions.length + 1;
+  res.json({ message: 'Ledger initialized with mock data', count: transactions.length });
 });
 
 // Get all transactions
-app.get('/api/blockchain/transactions', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.evaluateTransaction('GetAllTransactions');
-        await gateway.disconnect();
-
-        res.json(JSON.parse(result.toString()));
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+app.get('/api/transactions', (req, res) => {
+  res.json(transactions);
 });
 
-// Get transaction by ID
-app.get('/api/blockchain/transaction/:id', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.evaluateTransaction('GetTransaction', req.params.id);
-        await gateway.disconnect();
-
-        res.json(JSON.parse(result.toString()));
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Get single transaction
+app.get('/api/transactions/:id', (req, res) => {
+  const transaction = transactions.find(tx => tx.transactionID === req.params.id);
+  if (transaction) {
+    res.json(transaction);
+  } else {
+    res.status(404).json({ error: 'Transaction not found' });
+  }
 });
 
-// Get transactions by SME ID
-app.get('/api/blockchain/transactions/sme/:smeId', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.evaluateTransaction('GetTransactionsBySME', req.params.smeId);
-        await gateway.disconnect();
-
-        res.json(JSON.parse(result.toString()));
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// Get cash flow summary
-app.get('/api/blockchain/summary/:smeId', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.evaluateTransaction('GetCashFlowSummary', req.params.smeId);
-        await gateway.disconnect();
-
-        res.json(JSON.parse(result.toString()));
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Create new transaction
+app.post('/api/transactions', (req, res) => {
+  const { smeID, type, amount, category, description, date, createdBy } = req.body;
+  
+  const newTransaction = {
+    transactionID: `TX${String(transactionCounter).padStart(3, '0')}`,
+    smeID,
+    type,
+    amount: parseFloat(amount),
+    category,
+    description,
+    date,
+    timestamp: new Date().toISOString(),
+    createdBy: createdBy || 'admin'
+  };
+  
+  transactions.push(newTransaction);
+  transactionCounter++;
+  
+  res.status(201).json(newTransaction);
 });
 
 // Update transaction
-app.put('/api/blockchain/transaction/:id', async (req, res) => {
-    try {
-        const { type, amount, category, description, date } = req.body;
-
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
-
-        const { contract, gateway } = connection;
-        const result = await contract.submitTransaction(
-            'UpdateTransaction',
-            req.params.id,
-            type,
-            amount.toString(),
-            category,
-            description,
-            date
-        );
-        await gateway.disconnect();
-
-        res.json({ 
-            message: 'Transaction updated successfully',
-            transaction: JSON.parse(result.toString())
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+app.put('/api/transactions/:id', (req, res) => {
+  const index = transactions.findIndex(tx => tx.transactionID === req.params.id);
+  
+  if (index !== -1) {
+    transactions[index] = {
+      ...transactions[index],
+      ...req.body,
+      timestamp: new Date().toISOString()
+    };
+    res.json(transactions[index]);
+  } else {
+    res.status(404).json({ error: 'Transaction not found' });
+  }
 });
 
 // Delete transaction
-app.delete('/api/blockchain/transaction/:id', async (req, res) => {
-    try {
-        const connection = await connectToNetwork();
-        if (!connection) {
-            return res.status(500).json({ error: 'Failed to connect to blockchain network' });
-        }
+app.delete('/api/transactions/:id', (req, res) => {
+  const index = transactions.findIndex(tx => tx.transactionID === req.params.id);
+  
+  if (index !== -1) {
+    const deleted = transactions.splice(index, 1);
+    res.json({ message: 'Transaction deleted', transaction: deleted[0] });
+  } else {
+    res.status(404).json({ error: 'Transaction not found' });
+  }
+});
 
-        const { contract, gateway } = connection;
-        await contract.submitTransaction('DeleteTransaction', req.params.id);
-        await gateway.disconnect();
+// Get transactions by SME
+app.get('/api/transactions/sme/:smeId', (req, res) => {
+  const smeTransactions = transactions.filter(tx => tx.smeID === req.params.smeId);
+  res.json(smeTransactions);
+});
 
-        res.json({ message: 'Transaction deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Get cash flow summary
+app.get('/api/summary/:smeId', (req, res) => {
+  const smeTransactions = transactions.filter(tx => tx.smeID === req.params.smeId);
+  
+  const totalInflow = smeTransactions
+    .filter(tx => tx.type === 'inflow')
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  
+  const totalOutflow = smeTransactions
+    .filter(tx => tx.type === 'outflow')
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  
+  const balance = totalInflow - totalOutflow;
+  
+  res.json({
+    smeID: req.params.smeId,
+    totalInflow,
+    totalOutflow,
+    balance,
+    transactionCount: smeTransactions.length
+  });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`SME Cashflow Backend API running on http://localhost:${PORT}`);
-    console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`✅ Mock Blockchain API running on http://localhost:${PORT}`);
+  console.log(`📊 Loaded ${transactions.length} mock transactions`);
 });
