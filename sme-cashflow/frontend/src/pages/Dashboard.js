@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useSystem } from '../context/SystemContext';
-import { getAllTransactions, getCashFlowSummary } from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import { getAllTransactions } from '../services/api';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Activity, Lock } from 'lucide-react';
 
 const Dashboard = () => {
-  const { systemType } = useSystem();
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ totalInflow: 0, totalOutflow: 0, balance: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [systemType]);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -74,9 +72,10 @@ const Dashboard = () => {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Cash Flow Dashboard</h1>
-          <p className="text-blue-100">
-            System: <span className="font-semibold capitalize">{systemType}</span>
-          </p>
+          <div className="flex items-center gap-2 text-blue-100">
+            <Lock size={16} className="text-green-400" />
+            <p className="text-sm">All transactions are secured on the blockchain for transparency and immutability</p>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -171,7 +170,13 @@ const Dashboard = () => {
 
         {/* Transactions Table */}
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-xl">
-          <h3 className="text-xl font-bold text-white mb-4">All Transactions</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-white">All Transactions</h3>
+            <div className="flex items-center gap-2 text-green-400 text-sm">
+              <Lock size={14} />
+              <span>Blockchain Verified</span>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
